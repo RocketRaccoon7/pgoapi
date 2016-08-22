@@ -58,7 +58,7 @@ class RpcApi:
     RPC_ID = 0
     START_TIME = 0
 
-    def __init__(self, auth_provider, device_info):
+    def __init__(self, auth_provider, device_info=None, unknown_25=0):
 
         self.log = logging.getLogger(__name__)
 
@@ -78,7 +78,17 @@ class RpcApi:
         """ data fields for unknown6 """
         self.session_hash = os.urandom(32)
 
-        self.device_info = device_info
+        if device_info is not None:
+            if isinstance(device_info, Signature.DeviceInfo):
+                self.device_info = device_info
+            else:
+                self.device_info = Signature.DeviceInfo()
+                for key in device_info:
+                    setattr(self.device_info, key, device_info[key])
+        else:
+            self.device_info = None
+
+        self.unknown_25 = unknown_25
 
     def activate_signature(self, lib_path):
         try:
@@ -170,17 +180,17 @@ class RpcApi:
             else:
                 self.log.debug('Received Session Ticket valid for %02d:%02d:%02d hours (%s < %s)', h, m, s, now_ms, auth_ticket['expire_timestamp_ms'])
 
-    def _build_main_request(self, subrequests, player_position=None):
+    def _build_main_request(self, subrequests, player_position=None, location_fix=None, sensor_info=None, activity_status=None):
         self.log.debug('Generating main RPC request...')
 
         request = RequestEnvelope()
         request.status_code = 2
         request.request_id = self.get_rpc_id()
 
+        request.altitude = 8  # not as suspicious as 0
+
         if player_position is not None:
             request.latitude, request.longitude, request.altitude = player_position
-
-        request.altitude = 8  # not as suspicious as 0
 
         """ generate sub requests before signature generation """
         request = self._build_sub_requests(request, subrequests)
@@ -212,8 +222,35 @@ class RpcApi:
             sig.timestamp = get_time(ms=True)
             sig.timestamp_since_start = get_time(ms=True) - RpcApi.START_TIME
 
-            for key in self.device_info:
-                setattr(sig.device_info, key, self.device_info[key])
+            sig.device_info = self.device_info
+
+            if location_fix is not None:
+                for fix in location_fix:
+                    if isinstance(fix, Signature.LocationFix):
+                        sig.location_fix.append(fix)
+                    else:
+                        new_fix = Signature.LocationFix()
+                        for key in fix:
+                            setattr(new_fix, key, fix[key])
+                        sig.location_fix.append(new_fix)
+
+            if sensor_info is not None:
+                if isinstance(sensor_info, Signature.SensorInfo):
+                    sig.sensor_info = sensor_info
+                else:
+                    sig.sensor_info = Signature.SensorInfo()
+                    for key in sensor_info:
+                        setattr(sig.sensor_info, key, sensor_info[key])
+
+            if activity_status is not None:
+                if isinstance(activity_status, Signature.ActivityStatus):
+                    sig.activity_status = activity_status
+                else:
+                    sig.activity_status = Signature.ActivityStatus()
+                    for key in activity_status:
+                        setattr(sig.activity_status, key, activity_status[key])
+
+            sig.unknown_25 = unknown_25
 
             signature_proto = sig.SerializeToString()
 
