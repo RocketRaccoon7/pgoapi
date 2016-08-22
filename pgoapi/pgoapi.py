@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 class PGoApi:
 
-    def __init__(self, provider=None, oauth2_refresh_token=None, username=None, password=None, position_lat=None, position_lng=None, position_alt=None, proxy_config=None, device_info=None, unknown_25=0):
+    def __init__(self, provider=None, oauth2_refresh_token=None, username=None, password=None, position_lat=None, position_lng=None, position_alt=None, proxy_config=None):
         self.set_logger()
         self.log.info('%s v%s - %s', __title__, __version__, __copyright__)
 
@@ -67,9 +67,6 @@ class PGoApi:
 
         if proxy_config is not None:
             self._session.proxies = proxy_config
-
-        self.device_info = device_info
-        self.unknown_25 = unknown_25
 
     def set_logger(self, logger=None):
         self.log = logger or logging.getLogger(__name__)
@@ -122,9 +119,8 @@ class PGoApi:
     def get_auth_provider(self):
         return self._auth_provider
 
-    def create_request(self):
-        request = PGoApiRequest(self, self._position_lat, self._position_lng,
-                                self._position_alt, self.device_info, self.unknown_25)
+    def create_request(self, signature):
+        request = PGoApiRequest(self, self._position_lat, self._position_lng, self._position_alt)
         return request
 
     def activate_signature(self, lib_path):
@@ -196,8 +192,7 @@ class PGoApi:
 
 class PGoApiRequest:
 
-    def __init__(self, parent, position_lat, position_lng, position_alt,
-                 device_info=None, unknown_25=0):
+    def __init__(self, parent, position_lat, position_lng, position_alt):
         self.log = logging.getLogger(__name__)
 
         self.__parent__ = parent
@@ -211,10 +206,8 @@ class PGoApiRequest:
         self._position_alt = position_alt
 
         self._req_method_list = []
-        self.device_info = device_info
-        self.unknown_25 = unknown_25
 
-    def call(self):
+    def call(self, signature=None):
         if not self._req_method_list:
             raise EmptySubrequestChainException()
 
@@ -225,7 +218,7 @@ class PGoApiRequest:
             self.log.info('Not logged in')
             raise NotLoggedInException()
 
-        request = RpcApi(self._auth_provider, self.device_info, self.unknown_25)
+        request = RpcApi(self._auth_provider, signature)
         request._session = self.__parent__._session
 
         lib_path = self.__parent__.get_signature_lib()

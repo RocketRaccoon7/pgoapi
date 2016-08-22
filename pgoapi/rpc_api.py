@@ -58,7 +58,7 @@ class RpcApi:
     RPC_ID = 0
     START_TIME = 0
 
-    def __init__(self, auth_provider, device_info=None, unknown_25=0):
+    def __init__(self, auth_provider):
 
         self.log = logging.getLogger(__name__)
 
@@ -77,18 +77,6 @@ class RpcApi:
 
         """ data fields for unknown6 """
         self.session_hash = os.urandom(32)
-
-        if device_info is not None:
-            if isinstance(device_info, Signature.DeviceInfo):
-                self.device_info = device_info
-            else:
-                self.device_info = Signature.DeviceInfo()
-                for key in device_info:
-                    setattr(self.device_info, key, device_info[key])
-        else:
-            self.device_info = None
-
-        self.unknown_25 = unknown_25
 
     def activate_signature(self, lib_path):
         try:
@@ -129,12 +117,12 @@ class RpcApi:
 
         return http_response
 
-    def request(self, endpoint, subrequests, player_position):
+    def request(self, endpoint, subrequests, player_position, signature=None):
 
         if not self._auth_provider or self._auth_provider.is_login() is False:
             raise NotLoggedInException()
 
-        request_proto = self._build_main_request(subrequests, player_position)
+        request_proto = self._build_main_request(subrequests, player_position, signature)
         response = self._make_rpc(endpoint, request_proto)
 
         response_dict = self._parse_main_response(response, subrequests)
@@ -180,7 +168,7 @@ class RpcApi:
             else:
                 self.log.debug('Received Session Ticket valid for %02d:%02d:%02d hours (%s < %s)', h, m, s, now_ms, auth_ticket['expire_timestamp_ms'])
 
-    def _build_main_request(self, subrequests, player_position=None, location_fix=None, sensor_info=None, activity_status=None):
+    def _build_main_request(self, subrequests, player_position=None, signature=None):
         self.log.debug('Generating main RPC request...')
 
         request = RequestEnvelope()
@@ -209,7 +197,7 @@ class RpcApi:
             ticket_serialized = request.auth_info.SerializeToString() #Sig uses this when no auth_ticket available
 
         if self._signature_gen:
-            sig = Signature()
+            sig = Signature() if signature is None or isinstance(signature, Signature) is False else signature
 
             sig.location_hash1 = generateLocation1(ticket_serialized, request.latitude, request.longitude, request.altitude)
             sig.location_hash2 = generateLocation2(request.latitude, request.longitude, request.altitude)
@@ -221,36 +209,6 @@ class RpcApi:
             sig.session_hash = self.session_hash
             sig.timestamp = get_time(ms=True)
             sig.timestamp_since_start = get_time(ms=True) - RpcApi.START_TIME
-
-            sig.device_info = self.device_info
-
-            if location_fix is not None:
-                for fix in location_fix:
-                    if isinstance(fix, Signature.LocationFix):
-                        sig.location_fix.append(fix)
-                    else:
-                        new_fix = Signature.LocationFix()
-                        for key in fix:
-                            setattr(new_fix, key, fix[key])
-                        sig.location_fix.append(new_fix)
-
-            if sensor_info is not None:
-                if isinstance(sensor_info, Signature.SensorInfo):
-                    sig.sensor_info = sensor_info
-                else:
-                    sig.sensor_info = Signature.SensorInfo()
-                    for key in sensor_info:
-                        setattr(sig.sensor_info, key, sensor_info[key])
-
-            if activity_status is not None:
-                if isinstance(activity_status, Signature.ActivityStatus):
-                    sig.activity_status = activity_status
-                else:
-                    sig.activity_status = Signature.ActivityStatus()
-                    for key in activity_status:
-                        setattr(sig.activity_status, key, activity_status[key])
-
-            sig.unknown_25 = unknown_25
 
             signature_proto = sig.SerializeToString()
 
